@@ -21,11 +21,6 @@ const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await login(email, password);
-
-    // Extract tokens from the result if login returns OTP step (adjust accordingly)
-    // But since your login sends OTP, refresh token is generated after OTP verification.
-    // So we do it in verifyLoginOTP controller instead.
-
     res.status(200).json(result);
   } catch (err) {
     res.status(401).json({ error: err.message });
@@ -35,25 +30,22 @@ const loginController = async (req, res) => {
 const verifyOTPController = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    const result = await verifyLoginOTP(email, otp); // this returns accessToken & refreshToken
+    const result = await verifyLoginOTP(email, otp);
 
-    // Set refreshToken in cookie securely
     res.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // only true in prod (HTTPS)
-      sameSite: 'Strict', // adjust to 'Lax' if needed
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Don't send refreshToken in response body (optional, for extra security)
-    const { refreshToken, ...rest } = result;
+    const { refreshToken, ...rest } = result; // exclude refresh token from response body
 
     res.status(200).json(rest);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
 
 const verifyRegisterOTPController = async (req, res) => {
   try {
@@ -65,21 +57,11 @@ const verifyRegisterOTPController = async (req, res) => {
   }
 };
 
-
-// const logoutController = async (req, res) => {
-//   try {
-//     await logout(req.user.userId); // req.user is assumed to be populated via auth middleware
-//     res.status(200).json({ message: 'Logged out successfully' });
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
 const logoutController = async (req, res) => {
   try {
-    await logout(req.user.id);  // Clear refresh token in DB for user
+    await logout(req.user.id);
 
-    // Clear cookie on frontend (assuming cookie name 'accessToken')
-    res.clearCookie('accessToken', {
+    res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'Strict',
@@ -91,9 +73,6 @@ const logoutController = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
-
 
 const refreshTokenController = async (req, res) => {
   try {

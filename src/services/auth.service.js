@@ -1,5 +1,5 @@
 const bcrypt = require('bcrypt');
-const { prisma } = require('../config/prismaClient');
+const  prisma  = require('../config/prismaClient');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -16,28 +16,17 @@ const register = async (name, email, password) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
+  // Default role USER, can extend to accept role param if needed
   const newUser = await prisma.user.create({
     data: { name, email, password: hashedPassword, isVerified: false },
   });
 
   const otp = generateOTP();
   storeOTP(email, otp);
-  sendOTPEmail(email, otp).catch(console.error);
+  await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id };
+  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id ,otp : otp};
 };
-
-// const verifyRegistrationOTP = async (email, otp) => {
-//   const isValid = verifyOTP(email, otp);
-//   if (!isValid) throw new Error('Invalid or expired OTP');
-
-//   const user = await prisma.user.update({
-//     where: { email },
-//     data: {isOtpEnabled: true },
-//   });
-
-//   return { message: 'Email verified successfully', userEmail: user.email };
-// };
 
 const verifyRegistrationOTP = async (email, otp) => {
   const isValid = verifyOTP(email, otp);
@@ -48,8 +37,16 @@ const verifyRegistrationOTP = async (email, otp) => {
     data: { isVerified: true, isOtpEnabled: true },
   });
 
-  const accessToken = generateAccessToken({ id: user.id, email: user.email });
-  const refreshToken = generateRefreshToken({ id: user.id, email: user.email });
+  const accessToken = generateAccessToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+  });
+  const refreshToken = generateRefreshToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+  });
 
   await prisma.user.update({
     where: { email },
@@ -72,7 +69,7 @@ const login = async (email, password) => {
 
   const otp = generateOTP();
   storeOTP(email, otp);
-  sendOTPEmail(email, otp).catch(console.error);
+  await sendOTPEmail(email, otp);
 
   return { message: 'OTP sent to your email' };
 };
@@ -84,8 +81,16 @@ const verifyLoginOTP = async (email, otp) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) throw new Error('User not found');
 
-  const accessToken = generateAccessToken({ id: user.id, email: user.email });
-  const refreshToken = generateRefreshToken({ id: user.id, email: user.email });
+  const accessToken = generateAccessToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+  });
+  const refreshToken = generateRefreshToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+  });
 
   await prisma.user.update({
     where: { email },
@@ -100,13 +105,11 @@ const verifyLoginOTP = async (email, otp) => {
 };
 
 const logout = async (userId) => {
-  // Remove the refresh token from DB so user cannot refresh tokens
   await prisma.user.update({
     where: { id: userId },
     data: { refreshToken: null },
   });
 };
-
 
 const refresh = async (refreshToken) => {
   try {
@@ -116,7 +119,11 @@ const refresh = async (refreshToken) => {
     if (!user || user.refreshToken !== refreshToken)
       throw new Error('Invalid refresh token');
 
-    const newAccessToken = generateAccessToken({ id: user.id, email: user.email });
+    const newAccessToken = generateAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.userrole,
+    });
     return { accessToken: newAccessToken };
   } catch (err) {
     throw new Error('Refresh token expired or invalid');
