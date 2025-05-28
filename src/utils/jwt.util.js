@@ -9,16 +9,19 @@ const generateRefreshToken = (payload) => {
 };
 
 const verifyToken = (token, secret) => {
-  return jwt.verify(token, secret);
+  try {
+    return jwt.verify(token, secret);
+  } catch (err) {
+    throw new Error('Invalid or expired token');
+  }
 };
 
 const verifyRefreshToken = (token) => {
-  return jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+  try {
+    return jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+  } catch (err) {
+    throw new Error('Invalid or expired refresh token');
+  }
 };
 
-module.exports = {
-  generateAccessToken,
-  generateRefreshToken,
-  verifyToken,
-  verifyRefreshToken,
-};
+module.exports = { generateAccessToken, generateRefreshToken, verifyToken, verifyRefreshToken };

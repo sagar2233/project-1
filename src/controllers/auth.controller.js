@@ -34,6 +34,15 @@ const verifyOTPController = async (req, res) => {
     if (!platform) return res.status(400).json({ error: 'Platform is required' });
     const result = await verifyLoginOTP(email, otp, platform.toUpperCase());
 
+    // Clear any existing refresh token cookie for the platform
+    res.clearCookie(`${platform.toLowerCase()}RefreshToken`, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'Strict',
+      path: '/',
+    });
+
+    // Set new refresh token cookie
     res.cookie(`${platform.toLowerCase()}RefreshToken`, result.refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

@@ -22,11 +22,22 @@ const authenticate = async (req, res, next) => {
     }
 
     const storedRefreshToken = decoded.platform === 'WEB' ? user.webRefreshToken : user.mobileRefreshToken;
+    const refreshTokenExpiresAt = decoded.platform === 'WEB' ? user.webRefreshTokenExpiresAt : user.mobileRefreshTokenExpiresAt;
+    const currentSessionVersion = decoded.platform === 'WEB' ? user.webSessionVersion : user.mobileSessionVersion;
+
     if (!storedRefreshToken) {
       return res.status(401).json({ error: 'No active session for this platform' });
     }
 
-    req.user = decoded; // decoded: { id, email, role, platform }
+    if (refreshTokenExpiresAt && new Date() > refreshTokenExpiresAt) {
+      return res.status(401).json({ error: 'Session has expired' });
+    }
+
+    if (decoded.sessionVersion !== currentSessionVersion) {
+      return res.status(401).json({ error: 'Token invalidated due to new session' });
+    }
+
+    req.user = decoded; // decoded: { id, email, role, platform, sessionVersion }
     next();
   } catch (err) {
     console.error('Token verification failed:', err.message);
