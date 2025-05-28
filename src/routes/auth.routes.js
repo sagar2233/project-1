@@ -79,6 +79,21 @@ router.post('/register', registerController);
  *     responses:
  *       200:
  *         description: Login successful. OTP sent.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 accessToken:
+ *                   type: string
+ *                 refreshToken:
+ *                   type: string
+ *                 sessionId:
+ *                   type: string
+ *                 platform:
+ *                   type: string
  *       401:
  *         description: Invalid credentials
  */
@@ -111,6 +126,19 @@ router.post('/login', loginController);
  *     responses:
  *       200:
  *         description: OTP verified and tokens issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 sessionId:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 platform:
+ *                   type: string
  *       400:
  *         description: Invalid OTP or expired
  */
@@ -150,8 +178,6 @@ router.post('/verify-register-otp', verifyRegisterOTPController);
  *   post:
  *     summary: Logout current user
  *     tags: [Auth]
- *     security:
- *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -159,18 +185,21 @@ router.post('/verify-register-otp', verifyRegisterOTPController);
  *           schema:
  *             type: object
  *             required:
+ *               - email
  *               - platform
  *             properties:
+ *               email:
+ *                 type: string
  *               platform:
  *                 type: string
  *                 enum: [WEB, MOBILE]
  *     responses:
  *       200:
  *         description: Logged out successfully
- *       401:
- *         description: Unauthorized or token invalid
+ *       400:
+ *         description: Invalid input
  */
-router.post('/logout', authenticate, logoutController);
+router.post('/logout', logoutController);
 
 /**
  * @swagger
@@ -195,7 +224,7 @@ router.post('/logout', authenticate, logoutController);
  *                 enum: [WEB, MOBILE]
  *     responses:
  *       200:
- *         description: Access token refreshed
+ *         description: Token refreshed
  *       403:
  *         description: Refresh token invalid or expired
  */
@@ -213,7 +242,7 @@ router.post('/refresh-token', refreshTokenController);
  *       200:
  *         description: Admin access granted
  *       401:
- *         description: Unauthorized
+ *         description: Unauthorized or invalid
  *       403:
  *         description: Forbidden - not an admin
  */

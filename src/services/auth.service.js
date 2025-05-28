@@ -1,5 +1,7 @@
 const bcrypt = require('bcrypt');
-const  prisma  = require('../config/prismaClient');
+const { v4: uuidv4 } = require('uuid');
+const jwt = require('jsonwebtoken');
+const prisma = require('../config/prismaClient');
 const {
   generateAccessToken,
   generateRefreshToken,
@@ -16,16 +18,16 @@ const register = async (name, email, password) => {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
-  // Default role USER, can extend to accept role param if needed
   const newUser = await prisma.user.create({
     data: { name, email, password: hashedPassword, isVerified: false },
   });
 
   const otp = generateOTP();
   storeOTP(email, otp);
-  await sendOTPEmail(email, otp);
+ // await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id ,otp : otp};
+  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id , otp
+: otp};
 };
 
 const verifyRegistrationOTP = async (email, otp) => {
@@ -37,93 +39,114 @@ const verifyRegistrationOTP = async (email, otp) => {
     data: { isVerified: true, isOtpEnabled: true },
   });
 
-  const accessToken = generateAccessToken({
-    id: user.id,
-    email: user.email,
-    role: user.userrole,
-  });
-  const refreshToken = generateRefreshToken({
-    id: user.id,
-    email: user.email,
-    role: user.userrole,
-  });
-
-  await prisma.user.update({
-    where: { email },
-    data: { refreshToken },
-  });
-
-  return {
-    message: 'Email verified successfully',
-    accessToken,
-    refreshToken,
-  };
+  return { message: 'Email verified successfully', userId: user.id };
 };
 
-const login = async (email, password) => {
+const login = async (email, password, platform) => {
+  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !(await bcrypt.compare(password, user.password)))
     throw new Error('Invalid credentials');
 
   if (!user.isVerified) throw new Error('Please verify your email first.');
 
+  const accessToken = generateAccessToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+    platform,
+  });
+  const refreshToken = generateRefreshToken({
+    id: user.id,
+    email: user.email,
+    role: user.userrole,
+    platform,
+  });
+  const sessionId = uuidv4();
+
+  // Clear existing session for the same platform
+  const updateData = platform === 'WEB'
+    ? { webRefreshToken: refreshToken, webSessionId: sessionId }
+    : { mobileRefreshToken: refreshToken, mobileSessionId: sessionId };
+
+  await prisma.user.update({
+    where: { email },
+    data: updateData,
+  });
+
   const otp = generateOTP();
   storeOTP(email, otp);
   await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email' };
+  return { message: 'OTP sent to your email', accessToken, refreshToken, sessionId, platform };
 };
 
-const verifyLoginOTP = async (email, otp) => {
+const verifyLoginOTP = async (email, otp, platform) => {
   const isValid = verifyOTP(email, otp);
   if (!isValid) throw new Error('Invalid or expired OTP');
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) throw new Error('User not found');
 
+  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+
+  const storedRefreshToken = platform === 'WEB' ? user.webRefreshToken : user.mobileRefreshToken;
+  const storedSessionId = platform === 'WEB' ? user.webSessionId : user.mobileSessionId;
+
+  if (!storedRefreshToken || !storedSessionId) throw new Error('No active session found');
+
   const accessToken = generateAccessToken({
     id: user.id,
     email: user.email,
     role: user.userrole,
-  });
-  const refreshToken = generateRefreshToken({
-    id: user.id,
-    email: user.email,
-    role: user.userrole,
-  });
-
-  await prisma.user.update({
-    where: { email },
-    data: { refreshToken },
+    platform,
   });
 
   return {
     accessToken,
-    refreshToken,
+    refreshToken: storedRefreshToken,
+    sessionId: storedSessionId,
     message: 'Login successful',
+    platform,
   };
 };
 
-const logout = async (userId) => {
+const logout = async (email, platform) => {
+  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+
+  const updateData = platform === 'WEB'
+    ? { webRefreshToken: null, webSessionId: null }
+    : { mobileRefreshToken: null, mobileSessionId: null };
+
   await prisma.user.update({
-    where: { id: userId },
-    data: { refreshToken: null },
+    where: { email },
+    data: updateData,
   });
 };
 
-const refresh = async (refreshToken) => {
+const refresh = async (refreshToken, platform) => {
+  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+
   try {
     const payload = verifyRefreshToken(refreshToken);
-    const user = await prisma.user.findUnique({ where: { id: payload.id } });
+    const whereClause = platform === 'WEB'
+      ? { webRefreshToken: refreshToken }
+      : { mobileRefreshToken: refreshToken };
 
-    if (!user || user.refreshToken !== refreshToken)
+    const user = await prisma.user.findFirst({ where: whereClause });
+
+    if (!user || user.id !== payload.id || user.userrole !== payload.role || platform !== payload.platform) {
       throw new Error('Invalid refresh token');
+    }
 
     const newAccessToken = generateAccessToken({
       id: user.id,
       email: user.email,
       role: user.userrole,
+      platform,
     });
+
     return { accessToken: newAccessToken };
   } catch (err) {
     throw new Error('Refresh token expired or invalid');

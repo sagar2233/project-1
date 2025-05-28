@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../config/prismaClient');
+const { authenticate } = require('../middlewares/auth.middleware');
 
 /**
  * @swagger
@@ -15,6 +16,8 @@ const prisma = require('../config/prismaClient');
  *   post:
  *     summary: Create a product
  *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -36,8 +39,10 @@ const prisma = require('../config/prismaClient');
  *         description: Product created successfully
  *       400:
  *         description: Bad request
+ *       401:
+ *         description: Unauthorized
  */
-router.post('/product', async (req, res) => {
+router.post('/product', authenticate, async (req, res) => {
   const { name, description, price, imageUrl } = req.body;
   try {
     const product = await prisma.product.create({
@@ -55,18 +60,18 @@ router.post('/product', async (req, res) => {
  *   post:
  *     summary: Place an order
  *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [userId, productId, quantity]
+ *             required: [productId, quantity]
  *             properties:
- *               userId:
- *                 type: string
  *               productId:
- *                 type: string
+ *                 type: integer
  *               quantity:
  *                 type: integer
  *     responses:
@@ -74,12 +79,14 @@ router.post('/product', async (req, res) => {
  *         description: Order placed successfully
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Unauthorized
  */
-router.post('/order', async (req, res) => {
-  const { userId, productId, quantity } = req.body;
+router.post('/order', authenticate, async (req, res) => {
+  const { productId, quantity } = req.body;
   try {
     const order = await prisma.order.create({
-      data: { userId, productId, quantity },
+      data: { userId: req.user.id, productId: Number(productId), quantity: Number(quantity) },
     });
     res.status(201).json(order);
   } catch (error) {
@@ -91,17 +98,24 @@ router.post('/order', async (req, res) => {
  * @swagger
  * /api/user/orders:
  *   get:
- *     summary: Get all orders
+ *     summary: Get user's orders
  *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: A list of orders
+ *       401:
+ *         description: Unauthorized
  *       500:
  *         description: Server error
  */
-router.get('/orders', async (req, res) => {
+router.get('/orders', authenticate, async (req, res) => {
   try {
-    const orders = await prisma.order.findMany();
+    const orders = await prisma.order.findMany({
+      where: { userId: req.user.id },
+      include: { product: true },
+    });
     res.json(orders);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -114,6 +128,8 @@ router.get('/orders', async (req, res) => {
  *   post:
  *     summary: Add a new address
  *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -135,12 +151,14 @@ router.get('/orders', async (req, res) => {
  *         description: Address added
  *       400:
  *         description: Invalid input
+ *       401:
+ *         description: Unauthorized
  */
-router.post('/address', async (req, res) => {
+router.post('/address', authenticate, async (req, res) => {
   const { street, city, state, zip } = req.body;
   try {
     const address = await prisma.address.create({
-      data: { street, city, state, zip },
+      data: { userId: req.user.id, street, city, state, zip },
     });
     res.status(201).json(address);
   } catch (error) {
@@ -152,19 +170,25 @@ router.post('/address', async (req, res) => {
  * @swagger
  * /api/user/users:
  *   get:
- *     summary: Get all users
+ *     summary: Get all users (admin only)
  *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: List of users
+ *       403:
+ *         description: Forbidden
  *       404:
  *         description: No users found
  *       500:
  *         description: Server error
  */
-router.get('/users', async (req, res) => {
+router.get('/users', authenticate, async (req, res) => {
   try {
-    const users = await prisma.user.findMany();
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, userrole: true, createdAt: true },
+    });
     if (!users.length) {
       return res.status(404).json({ message: 'No users found' });
     }
