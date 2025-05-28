@@ -1,6 +1,5 @@
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-const jwt = require('jsonwebtoken');
 const prisma = require('../config/prismaClient');
 const {
   generateAccessToken,
@@ -27,7 +26,7 @@ const register = async (name, email, password) => {
   storeOTP(email, otp);
   await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id, otp: otp };
+  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id, otp };
 };
 
 const verifyRegistrationOTP = async (email, otp) => {
@@ -51,10 +50,8 @@ const login = async (email, password, platform) => {
 
   if (!user.isVerified) throw new Error('Please verify your email first.');
 
-  // Generate a temporary token for OTP verification
   const pendingToken = uuidv4();
 
-  // Clear any existing pending login and store new pending token
   await prisma.user.update({
     where: { email },
     data: {
@@ -80,25 +77,17 @@ const verifyLoginOTP = async (email, otp, platform) => {
 
   if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
 
-  // Validate pending login token and platform
   if (user.pendingLoginToken === null || user.pendingLoginPlatform !== platform) {
     throw new Error('No pending login session found or invalid platform');
   }
 
-  // Clear pending login token
-  await prisma.user.update({
-    where: { email },
-    data: {
-      pendingLoginToken: null,
-      pendingLoginPlatform: null,
-    },
-  });
+  // Log session data before update
+  console.log(`[Before Update] User ${email}, Platform: ${platform}, WebRefreshToken: ${user.webRefreshToken}, WebSessionVersion: ${user.webSessionVersion}, MobileRefreshToken: ${user.mobileRefreshToken}, MobileSessionVersion: ${user.mobileSessionVersion}`);
 
   const sessionVersion = (platform === 'WEB' ? user.webSessionVersion : user.mobileSessionVersion) + 1;
   const sessionId = uuidv4();
   const refreshTokenExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS);
 
-  // Generate new tokens with updated session version
   const accessToken = generateAccessToken({
     id: user.id,
     email: user.email,
@@ -114,31 +103,35 @@ const verifyLoginOTP = async (email, otp, platform) => {
     sessionVersion,
   });
 
-  // Invalidate previous session and update session version
   const updateData = platform === 'WEB'
     ? {
         webRefreshToken: refreshToken,
         webSessionId: sessionId,
         webRefreshTokenExpiresAt: refreshTokenExpiresAt,
-        webSessionVersion: { increment: 1 },
-        mobileRefreshToken: null,
-        mobileSessionId: null,
-        mobileRefreshTokenExpiresAt: null,
+        webSessionVersion: sessionVersion,
+        pendingLoginToken: null,
+        pendingLoginPlatform: null,
       }
     : {
         mobileRefreshToken: refreshToken,
         mobileSessionId: sessionId,
         mobileRefreshTokenExpiresAt: refreshTokenExpiresAt,
-        mobileSessionVersion: { increment: 1 },
-        webRefreshToken: null,
-        webSessionId: null,
-        webRefreshTokenExpiresAt: null,
+        mobileSessionVersion: sessionVersion,
+        pendingLoginToken: null,
+        pendingLoginPlatform: null,
       };
 
-  await prisma.user.update({
-    where: { email },
-    data: updateData,
-  });
+  // Use a transaction to ensure atomic update
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { email },
+      data: updateData,
+    }),
+  ]);
+
+  // Log session data after update
+  const updatedUser = await prisma.user.findUnique({ where: { email } });
+  console.log(`[After Update] User ${email}, Platform: ${platform}, WebRefreshToken: ${updatedUser.webRefreshToken}, WebSessionVersion: ${updatedUser.webSessionVersion}, MobileRefreshToken: ${updatedUser.mobileRefreshToken}, MobileSessionVersion: ${updatedUser.mobileSessionVersion}`);
 
   return {
     accessToken,
