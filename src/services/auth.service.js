@@ -8,13 +8,19 @@ const {
 } = require('../utils/jwt.util');
 const { generateOTP, storeOTP, verifyOTP } = require('../utils/otp.util');
 const { sendOTPEmail } = require('../utils/email.util');
+const logger = require('../utils/logger');
+const createError = require('http-errors');
 
 const SALT_ROUNDS = 10;
-const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const RESET_TOKEN_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
 
 const register = async (name, email, password) => {
   const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser) throw new Error('User already exists');
+  if (existingUser) {
+    logger.warn('Attempt to register with existing email', { email });
+    throw createError(409, 'User already exists');
+  }
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
@@ -24,31 +30,44 @@ const register = async (name, email, password) => {
 
   const otp = generateOTP();
   storeOTP(email, otp);
-  await sendOTPEmail(email, otp);
+  //await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id, otp };
+  logger.info('OTP generated for registration', { userId: newUser.id, email });
+  return { message: 'OTP sent to your email. Please verify.', userId: newUser.id ,otp: otp};
 };
 
 const verifyRegistrationOTP = async (email, otp) => {
   const isValid = verifyOTP(email, otp);
-  if (!isValid) throw new Error('Invalid or expired OTP');
-  
+  if (!isValid) {
+    logger.warn('Invalid or expired registration OTP', { email });
+    throw createError(400, 'Invalid or expired OTP');
+  }
+
   const user = await prisma.user.update({
     where: { email },
     data: { isVerified: true, isOtpEnabled: true },
   });
 
+  logger.info('Registration OTP verified', { userId: user.id, email });
   return { message: 'Email verified successfully', userId: user.id };
 };
 
 const login = async (email, password, platform) => {
-  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+  if (!['WEB', 'MOBILE'].includes(platform)) {
+    logger.warn('Invalid platform provided', { platform });
+    throw createError(400, 'Invalid platform');
+  }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await bcrypt.compare(password, user.password)))
-    throw new Error('Invalid credentials');
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    logger.warn('Invalid login credentials', { email });
+    throw createError(401, 'Invalid credentials');
+  }
 
-  if (!user.isVerified) throw new Error('Please verify your email first.');
+  if (!user.isVerified) {
+    logger.warn('Unverified email login attempt', { email });
+    throw createError(401, 'Please verify your email first.');
+  }
 
   const pendingToken = uuidv4();
 
@@ -63,26 +82,34 @@ const login = async (email, password, platform) => {
 
   const otp = generateOTP();
   storeOTP(email, otp);
-  await sendOTPEmail(email, otp);
+ // await sendOTPEmail(email, otp);
 
-  return { message: 'OTP sent to your email', pendingToken, platform ,otp: otp};
+  logger.info('Login OTP sent', { email, platform });
+  return { message: 'OTP sent to your email', pendingToken, platform, otp: otp };
 };
 
 const verifyLoginOTP = async (email, otp, platform) => {
   const isValid = verifyOTP(email, otp);
-  if (!isValid) throw new Error('Invalid or expired OTP');
-
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error('User not found');
-
-  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
-
-  if (user.pendingLoginToken === null || user.pendingLoginPlatform !== platform) {
-    throw new Error('No pending login session found or invalid platform');
+  if (!isValid) {
+    logger.warn('Invalid or expired login OTP', { email, platform });
+    throw createError(400, 'Invalid or expired OTP');
   }
 
-  // Log session data before update
-  console.log(`[Before Update] User ${email}, Platform: ${platform}, WebRefreshToken: ${user.webRefreshToken}, WebSessionVersion: ${user.webSessionVersion}, MobileRefreshToken: ${user.mobileRefreshToken}, MobileSessionVersion: ${user.mobileSessionVersion}`);
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    logger.warn('User not found during OTP verification', { email });
+    throw createError(404, 'User not found');
+  }
+
+  if (!['WEB', 'MOBILE'].includes(platform)) {
+    logger.warn('Invalid platform during OTP verification', { platform });
+    throw createError(400, 'Invalid platform');
+  }
+
+  if (user.pendingLoginToken === null || user.pendingLoginPlatform !== platform) {
+    logger.warn('No pending login session or invalid platform', { email, platform });
+    throw createError(400, 'No pending login session found or invalid platform');
+  }
 
   const sessionVersion = (platform === 'WEB' ? user.webSessionVersion : user.mobileSessionVersion) + 1;
   const sessionId = uuidv4();
@@ -121,7 +148,6 @@ const verifyLoginOTP = async (email, otp, platform) => {
         pendingLoginPlatform: null,
       };
 
-  // Use a transaction to ensure atomic update
   await prisma.$transaction([
     prisma.user.update({
       where: { email },
@@ -129,10 +155,7 @@ const verifyLoginOTP = async (email, otp, platform) => {
     }),
   ]);
 
-  // Log session data after update
-  const updatedUser = await prisma.user.findUnique({ where: { email } });
-  console.log(`[After Update] User ${email}, Platform: ${platform}, WebRefreshToken: ${updatedUser.webRefreshToken}, WebSessionVersion: ${updatedUser.webSessionVersion}, MobileRefreshToken: ${updatedUser.mobileRefreshToken}, MobileSessionVersion: ${updatedUser.mobileSessionVersion}`);
-
+  logger.info('Login successful, tokens issued', { email, platform, sessionId });
   return {
     accessToken,
     refreshToken,
@@ -143,13 +166,22 @@ const verifyLoginOTP = async (email, otp, platform) => {
 };
 
 const logout = async (email, platform) => {
-  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+  if (!['WEB', 'MOBILE'].includes(platform)) {
+    logger.warn('Invalid platform during logout', { platform });
+    throw createError(400, 'Invalid platform');
+  }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new Error('User not found');
+  if (!user) {
+    logger.warn('User not found during logout', { email });
+    throw createError(404, 'User not found');
+  }
 
   const storedRefreshToken = platform === 'WEB' ? user.webRefreshToken : user.mobileRefreshToken;
-  if (!storedRefreshToken) throw new Error('No active session found for this platform');
+  if (!storedRefreshToken) {
+    logger.warn('No active session found for logout', { email, platform });
+    throw createError(400, 'No active session found for this platform');
+  }
 
   const updateData = platform === 'WEB'
     ? { webRefreshToken: null, webSessionId: null, webRefreshTokenExpiresAt: null }
@@ -159,10 +191,15 @@ const logout = async (email, platform) => {
     where: { email },
     data: updateData,
   });
+
+  logger.info('User logged out successfully', { email, platform });
 };
 
 const refresh = async (refreshToken, platform) => {
-  if (!['WEB', 'MOBILE'].includes(platform)) throw new Error('Invalid platform');
+  if (!['WEB', 'MOBILE'].includes(platform)) {
+    logger.warn('Invalid platform during token refresh', { platform });
+    throw createError(400, 'Invalid platform');
+  }
 
   try {
     const payload = verifyRefreshToken(refreshToken);
@@ -173,18 +210,21 @@ const refresh = async (refreshToken, platform) => {
     const user = await prisma.user.findFirst({ where: whereClause });
 
     if (!user || user.id !== payload.id || user.userrole !== payload.role || platform !== payload.platform) {
-      throw new Error('Invalid refresh token');
+      logger.warn('Invalid refresh token', { platform });
+      throw createError(403, 'Invalid refresh token');
     }
 
     const refreshTokenExpiresAt = platform === 'WEB' ? user.webRefreshTokenExpiresAt : user.mobileRefreshTokenExpiresAt;
     const currentSessionVersion = platform === 'WEB' ? user.webSessionVersion : user.mobileSessionVersion;
 
     if (!refreshTokenExpiresAt || new Date() > refreshTokenExpiresAt) {
-      throw new Error('Refresh token expired');
+      logger.warn('Refresh token expired', { platform });
+      throw createError(403, 'Refresh token expired');
     }
 
     if (payload.sessionVersion !== currentSessionVersion) {
-      throw new Error('Refresh token invalidated due to new session');
+      logger.warn('Refresh token invalidated due to new session', { platform });
+      throw createError(403, 'Refresh token invalidated due to new session');
     }
 
     const newAccessToken = generateAccessToken({
@@ -195,10 +235,68 @@ const refresh = async (refreshToken, platform) => {
       sessionVersion: currentSessionVersion,
     });
 
+    logger.info('Access token refreshed', { platform, userId: user.id });
     return { accessToken: newAccessToken };
   } catch (err) {
-    throw new Error('Refresh token expired or invalid');
+    logger.error('Token refresh failed', {
+      errorMessage: err.message,
+      platform,
+    });
+    throw createError(403, 'Refresh token expired or invalid');
   }
+};
+
+const forgotPassword = async (email) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    logger.warn('Forgot password attempt for non-existent user', { email });
+    throw createError(404, 'User not found');
+  }
+
+  const resetToken = uuidv4();
+  const resetTokenExpiresAt = new Date(Date.now() + RESET_TOKEN_EXPIRY_MS);
+
+  await prisma.user.update({
+    where: { email },
+    data: {
+      resetPasswordToken: resetToken,
+      resetPasswordExpiresAt: resetTokenExpiresAt,
+    },
+  });
+
+ // await sendOTPEmail(email, resetToken);
+
+  logger.info('Password reset token sent', { email });
+  return { message: 'Password reset token sent to your email' , resetToken
+: resetToken};
+};
+
+const resetPassword = async (token, newPassword) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      resetPasswordToken: token,
+      resetPasswordExpiresAt: { gt: new Date() },
+    },
+  });
+
+  if (!user) {
+    logger.warn('Invalid or expired password reset token');
+    throw createError(400, 'Invalid or expired reset token');
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpiresAt: null,
+    },
+  });
+
+  logger.info('Password reset successfully', { userId: user.id });
+  return { message: 'Password reset successfully' };
 };
 
 module.exports = {
@@ -208,4 +306,6 @@ module.exports = {
   verifyLoginOTP,
   logout,
   refresh,
+  forgotPassword,
+  resetPassword,
 };

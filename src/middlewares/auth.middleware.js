@@ -1,11 +1,14 @@
+const createError = require('http-errors');
 const { verifyToken } = require('../utils/jwt.util');
 const prisma = require('../config/prismaClient');
+const logger = require('../utils/logger');
 
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: No token provided' });
+    logger.warn('No token provided', { correlationId: req.correlationId });
+    return next(createError(401, 'Unauthorized: No token provided'));
   }
 
   const token = authHeader.split(' ')[1];
@@ -13,12 +16,14 @@ const authenticate = async (req, res, next) => {
   try {
     const decoded = verifyToken(token, process.env.ACCESS_TOKEN_SECRET);
     if (!['WEB', 'MOBILE'].includes(decoded.platform)) {
-      return res.status(401).json({ error: 'Invalid platform in token' });
+      logger.warn('Invalid platform in token', { correlationId: req.correlationId });
+      return next(createError(401, 'Invalid platform in token'));
     }
 
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      logger.warn('User not found', { correlationId: req.correlationId });
+      return next(createError(401, 'User not found'));
     }
 
     const storedRefreshToken = decoded.platform === 'WEB' ? user.webRefreshToken : user.mobileRefreshToken;
@@ -26,33 +31,42 @@ const authenticate = async (req, res, next) => {
     const currentSessionVersion = decoded.platform === 'WEB' ? user.webSessionVersion : user.mobileSessionVersion;
 
     if (!storedRefreshToken) {
-      return res.status(401).json({ error: 'No active session for this platform' });
+      logger.warn('No active session for this platform', { correlationId: req.correlationId });
+      return next(createError(401, 'No active session for this platform'));
     }
 
     if (refreshTokenExpiresAt && new Date() > refreshTokenExpiresAt) {
-      return res.status(401).json({ error: 'Session has expired' });
+      logger.warn('Session has expired', { correlationId: req.correlationId });
+      return next(createError(401, 'Session has expired'));
     }
 
     if (decoded.sessionVersion !== currentSessionVersion) {
-      return res.status(401).json({ error: 'Token invalidated due to new session' });
+      logger.warn('Token invalidated due to new session', { correlationId: req.correlationId });
+      return next(createError(401, 'Token invalidated due to new session'));
     }
 
-    req.user = decoded; // decoded: { id, email, role, platform, sessionVersion }
+    req.user = decoded;
     next();
   } catch (err) {
-    console.error('Token verification failed:', err.message);
-    return res.status(401).json({ error: 'Invalid or expired token' });
+    logger.error('Token verification failed', {
+      correlationId: req.correlationId,
+      errorMessage: err.message,
+      stack: err.stack,
+    });
+    return next(createError(401, 'Invalid or expired token'));
   }
 };
 
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      logger.warn('Unauthorized: No user in request', { correlationId: req.correlationId });
+      return next(createError(401, 'Unauthorized'));
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden: Access denied' });
+      logger.warn('Forbidden: Access denied', { correlationId: req.correlationId });
+      return next(createError(403, 'Forbidden: Access denied'));
     }
 
     next();

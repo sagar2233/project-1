@@ -8,6 +8,8 @@ const {
   verifyRegisterOTPController,
   logoutController,
   refreshTokenController,
+  forgotPasswordController,
+  resetPasswordController,
 } = require('../controllers/auth.controller');
 
 /**
@@ -41,12 +43,14 @@ const {
  *                 format: email
  *               password:
  *                 type: string
- *                 format: password
+ *                 minLength: 8
  *     responses:
  *       201:
  *         description: User registered successfully
  *       400:
- *         description: Invalid input or user already exists
+ *         description: Invalid input
+ *       409:
+ *         description: Email already registered
  */
 router.post('/register', registerController);
 
@@ -72,28 +76,13 @@ router.post('/register', registerController);
  *                 format: email
  *               password:
  *                 type: string
- *                 format: password
+ *                 minLength: 8
  *               platform:
  *                 type: string
  *                 enum: [WEB, MOBILE]
  *     responses:
  *       200:
  *         description: Login successful. OTP sent.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 accessToken:
- *                   type: string
- *                 refreshToken:
- *                   type: string
- *                 sessionId:
- *                   type: string
- *                 platform:
- *                   type: string
  *       401:
  *         description: Invalid credentials
  */
@@ -120,25 +109,14 @@ router.post('/login', loginController);
  *                 type: string
  *               otp:
  *                 type: string
+ *                 minLength: 6
+ *                 maxLength: 6
  *               platform:
  *                 type: string
  *                 enum: [WEB, MOBILE]
  *     responses:
  *       200:
  *         description: OTP verified and tokens issued
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 accessToken:
- *                   type: string
- *                 sessionId:
- *                   type: string
- *                 message:
- *                   type: string
- *                 platform:
- *                   type: string
  *       400:
  *         description: Invalid OTP or expired
  */
@@ -164,6 +142,8 @@ router.post('/verify-otp', verifyOTPController);
  *                 type: string
  *               otp:
  *                 type: string
+ *                 minLength: 6
+ *                 maxLength: 6
  *     responses:
  *       200:
  *         description: Account activated successfully
@@ -229,6 +209,61 @@ router.post('/logout', logoutController);
  *         description: Refresh token invalid or expired
  */
 router.post('/refresh-token', refreshTokenController);
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Password reset token sent
+ *       404:
+ *         description: User not found
+ */
+router.post('/forgot-password', forgotPasswordController);
+
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password using token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - newPassword
+ *             properties:
+ *               token:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *       400:
+ *         description: Invalid or expired token
+ */
+router.post('/reset-password', resetPasswordController);
 
 /**
  * @swagger

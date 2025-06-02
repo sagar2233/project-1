@@ -1,34 +1,4 @@
-// generator client {
-//   provider = "prisma-client-js"
-// }
-
-// datasource db {
-//   provider = "postgresql"
-//   url      = env("DATABASE_URL")
-// }
-
-// model User {
-//   id               Int       @id @default(autoincrement())
-//   name             String
-//   email            String    @unique
-//   password         String
-//   isOtpEnabled     Boolean   @default(false)
-//   isVerified       Boolean   @default(false)
-//   webRefreshToken  String?   @unique
-//   webSessionId     String?   @unique
-//   mobileRefreshToken String? @unique
-//   mobileSessionId  String?   @unique
-//   userrole         UserRole  @default(USER)
-//   createdAt        DateTime  @default(now())
-//   updatedAt        DateTime  @updatedAt
-// }
-
-// enum UserRole {
-//   USER
-//   ADMIN
-// }
-
-generator client {
+generator client { 
   provider = "prisma-client-js"
 }
 
@@ -54,6 +24,8 @@ model User {
   mobileSessionVersion       Int       @default(1)
   pendingLoginToken         String?   
   pendingLoginPlatform      String?   
+  resetPasswordToken        String?   @unique
+  resetPasswordExpiresAt    DateTime?
   userrole                  UserRole  @default(USER)
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
