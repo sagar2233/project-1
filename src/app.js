@@ -8,6 +8,7 @@ const loggingMiddleware = require('./middlewares/logging.middleware');
 const errorHandler = require('./middlewares/error.middleware');
 const authRoutes = require('./routes/auth');
 const logger = require('./utils/logger');
+const createError = require('http-errors');
 
 const app = express();
 
@@ -20,10 +21,29 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
 app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
 app.use(loggingMiddleware);
+app.use((err, req, res, next) => {
+  // Log the error using Winston
+  logger.error(`${err.status || 500} - ${err.message} - ${req.originalUrl} - ${req.method} - ${req.ip}`);
+
+  // Ensure the error is an http-errors object
+  if (!(err instanceof createError.HttpError)) {
+    err = createError(500, 'Internal Server Error'); // Fallback for non-http-errors
+  }
+
+  // Send error response
+  res.status(err.status || 500).json({
+    error: {
+      status: err.status,
+      message: err.message,
+    },
+  });
+});
+
 
 // Swagger setup
 const swaggerOptions = {
