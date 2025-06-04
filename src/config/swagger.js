@@ -1,9 +1,7 @@
 const path = require('path');
 
 const express = require('express');
-const router = express.Router();
 
-const registerController = require('../controllers/auth.controller').registerController;
 
 const options = {
   definition: {
