@@ -1,0 +1,53 @@
+[33mcommit 3424d2a1f178233c742afaa69085a280fb9f1af5[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Tue Jun 3 18:10:25 2025 +0530
+
+    congigured joi validation
+
+[33mcommit 5fc5d111bb6f8ee6363074e45fe67140cece53ec[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Mon Jun 2 19:58:36 2025 +0530
+
+    Add forgot password with token reset (15-min expiry), unique email check, Winston logging, CORS setup, Helmet security, http-errors handling, and Joi validation for auth APIs
+
+[33mcommit 2b4035e68274e6547258fd72593cc5b65779e948[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Mon Jun 2 18:11:26 2025 +0530
+
+    forgot password implemented
+
+[33mcommit faad502c4b8180eba4226ab000aa85303058d72f[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Mon Jun 2 14:29:18 2025 +0530
+
+    wip: local changes
+
+[33mcommit 76c3ec7f3491db0ad948bb4ac52d2c868556b570[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Wed May 28 18:24:22 2025 +0530
+
+    user and weblogin are working each login is different each other
+
+[33mcommit cce90583f1ca2895d6b83e2e176b9995ad841758[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Wed May 28 16:23:51 2025 +0530
+
+    working mobile and web 1 time active login
+
+[33mcommit f4d9e28a9ea6b3fe4c8951120a82308aa0807bd6[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Wed May 28 12:25:25 2025 +0530
+
+    before updating session based login
+
+[33mcommit 6014b47bebbaea34af859e08b65d459f199f866a[m
+Author: SagarKumili <sagar.sparquer@gmail.com>
+Date:   Mon May 26 17:33:46 2025 +0530
+
+    added swagger ui along with some apis
+
+[33mcommit c2258e8cfaa3f5a1ee2319edf90213e276a2f798[m
+Author: Rahul Pannati <rahulpannati@Rahuls-MacBook-Air.local>
+Date:   Fri May 23 17:49:06 2025 +0530
+
+    23 may 5 :48 pm    --> registration with email verify and login with oAuth ( emai) logout need to work on.

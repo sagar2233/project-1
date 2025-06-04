@@ -12,13 +12,26 @@ const createError = require('http-errors');
 
 const app = express();
 
-// CORS configuration
+// // CORS configuration
+// const corsOptions = {
+//   origin: ['http://localhost:5173', 'https://your-production-domain.com'],
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id'],
+// };
+
+
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
+  : [];
 const corsOptions = {
-  origin: ['http://localhost:3000', 'https://your-production-domain.com'],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id'],
 };
+
+
 
 app.use(cors(corsOptions));
 
